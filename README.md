@@ -13,3 +13,5 @@ Aplikasi web berbasis Streamlit untuk membantu kontributor Adobe Stock dalam men
    * **Manual Mode:** Download file hasil *upscale* ke perangkat dan salin teks metadata (*copy-paste*) secara manual ke dasbor Adobe Stock[cite: 10].
    * **Auto Mode:** Unggah file secara langsung ke Adobe Stock menggunakan kredensial FTP/SFTP.
 5. **AI Fallback Mechanism:** Penanganan otomatis untuk kestabilan koneksi model AI Gemini.
+
+
