@@ -2,7 +2,7 @@ import io
 import os
 import ftplib
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from google import genai
 from streamlit_image_comparison import image_comparison
 
@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("⚡ Adobe Contributor Helper")
-st.caption("AI Title & Keywords | Auto/Manual Upscale | Direct FTP Upload")
+st.caption("AI Title & Keywords | Smart AI Sharp Upscale | Direct FTP Upload")
 
 # --- SIDEBAR KONFIGURASI ---
 st.sidebar.header("⚙️ Pengaturan")
@@ -63,13 +63,12 @@ with col_lang:
     )
 
 with col_scale:
-    enable_upscale = st.checkbox("Perbesar Resolusi (Upscale 2x)", value=True)
+    scale_factor = st.selectbox("🔍 Skala Upscale (Resolusi):", [2, 4, 8], index=1, help="Pilih 4x atau 8x jika foto asli berukuran kecil")
 
 uploaded_file = st.file_uploader("📸 Upload Foto / Gambar di Sini", type=['jpg', 'jpeg', 'png'])
 
 if uploaded_file is not None:
     original_image = Image.open(uploaded_file)
-    # Konversi ke RGB jika gambar memiliki saluran alpha (RGBA)
     if original_image.mode in ("RGBA", "P"):
         original_image = original_image.convert("RGB")
 
@@ -82,51 +81,66 @@ if uploaded_file is not None:
         else:
             processed_image = original_image.copy()
 
-            # 1. AI METADATA GENERATION
+            # 1. AI METADATA GENERATION DENGAN AUTO FALLBACK
             with st.spinner("1️⃣ Menganalisis gambar & membuat metadata..."):
-                try:
-                    client = genai.Client(api_key=gemini_api_key)
-                    prompt = f"""
-                    Analyze this image for Adobe Stock Contributor submission.
-                    Generate metadata strictly in language: {selected_language}.
-                    Output format MUST be EXACTLY as follows:
-                    Title: <Descriptive title max 15 words in {selected_language}>
-                    Keywords: <30-40 relevant keywords separated by commas in {selected_language}>
-                    """
+                client = genai.Client(api_key=gemini_api_key)
+                prompt = f"""
+                Analyze this image for Adobe Stock Contributor submission.
+                Generate metadata strictly in language: {selected_language}.
+                Output format MUST be EXACTLY as follows:
+                Title: <Descriptive title max 15 words in {selected_language}>
+                Keywords: <30-40 relevant keywords separated by commas in {selected_language}>
+                """
 
-                    # Menggunakan model gemini-3.8-flash sesuai petunjuk error
-                    response = client.models.generate_content(
-                        model='gemini-3.8-flash',
-                        contents=[original_image, prompt]
-                    )
+                models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+                ai_success = False
 
-                    ai_text = response.text
-                    st.success("✓ AI Berhasil Generate Title & Keywords!")
-                    st.text_area("📋 Hasil AI Metadata (Silakan Copy-Paste):", value=ai_text, height=140)
+                for model_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=[original_image, prompt]
+                        )
+                        ai_text = response.text
+                        st.success(f"✓ AI Berhasil Generate Title & Keywords (Model: {model_name})!")
+                        st.text_area("📋 Hasil AI Metadata (Silakan Copy-Paste):", value=ai_text, height=140)
+                        ai_success = True
+                        break
+                    except Exception as err:
+                        continue
 
-                except Exception as e:
-                    st.error(f"Gagal generate AI Metadata: {e}")
+                if not ai_success:
+                    st.error("⚠️ Server Gemini AI sedang padat. Silakan klik tombol 'Proses Gambar Sekarang' sekali lagi.")
 
-            # 2. PROSES UPSCALE & SLIDER COMPARISON
-            if enable_upscale:
-                with st.spinner("2️⃣ Memperbesar resolusi gambar (2x)..."):
-                    new_width, new_height = width * 2, height * 2
-                    processed_image = original_image.resize((new_width, new_height), Image.LANCZOS)
-                    st.success(f"✓ Resolusi berhasil dinaikkan menjadi {new_width} x {new_height} piksel")
+            # 2. PROSES UPSCALE & SHARPNESS ENHANCEMENT
+            with st.spinner(f"2️⃣ Memperbesar resolusi gambar ({scale_factor}x) & Mempertajam detail..."):
+                new_width, new_height = width * scale_factor, height * scale_factor
+                
+                # Resizing dengan algoritma Lanczos
+                processed_image = original_image.resize((new_width, new_height), Image.LANCZOS)
+                
+                # Penajaman Detail (Sharpening & Contrast)
+                enhancer_sharp = ImageEnhance.Sharpness(processed_image)
+                processed_image = enhancer_sharp.enhance(2.0)
+                
+                enhancer_contrast = ImageEnhance.Contrast(processed_image)
+                processed_image = enhancer_contrast.enhance(1.1)
 
-                    st.subheader("🔍 Perbandingan Sebelum & Sesudah Upscale")
-                    st.caption("Geser garis di tengah gambar ke kanan & kiri untuk melihat bedanya:")
-                    image_comparison(
-                        img1=original_image,
-                        img2=processed_image,
-                        label1="Asli (Sebelum)",
-                        label2="Upscale (Sesudah)",
-                        width=700
-                    )
+                st.success(f"✓ Resolusi berhasil dinaikkan dari {width}x{height} menjadi {new_width} x {new_height} piksel!")
+
+                st.subheader("🔍 Perbandingan Sebelum & Sesudah Upscale")
+                st.caption("Geser garis di tengah gambar ke kanan & kiri untuk melihat perbedaan ketajamannya:")
+                image_comparison(
+                    img1=original_image,
+                    img2=processed_image,
+                    label1=f"Asli ({width}x{height})",
+                    label2=f"Upscale ({new_width}x{new_height})",
+                    width=700
+                )
 
             # 3. MODE EKSEKUSI (MANUAL DOWNLOAD vs AUTO FTP)
             img_byte_arr = io.BytesIO()
-            processed_image.save(img_byte_arr, format='JPEG', quality=95)
+            processed_image.save(img_byte_arr, format='JPEG', quality=98)
             img_bytes = img_byte_arr.getvalue()
 
             if upload_mode == "Manual Upload (Download File)":
