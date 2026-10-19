@@ -94,8 +94,9 @@ if uploaded_file is not None:
                     Keywords: <30-40 relevant keywords separated by commas in {selected_language}>
                     """
 
+                    # Menggunakan model gemini-3.8-flash sesuai petunjuk error
                     response = client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.8-flash',
                         contents=[original_image, prompt]
                     )
 
